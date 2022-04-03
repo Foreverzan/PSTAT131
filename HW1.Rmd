@@ -1,3 +1,8 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -87,7 +92,9 @@ You should use the tidyverse and ggplot2 for these exercises.
 # Exercise 1:
 We are interested in highway miles per gallon, or the hwy variable. Create a histogram of this variable. Describe what you see/learn.
 ```{r}
-ggplot(mpg, aes(x=hwy)) + geom_histogram(fill="blue") + xlab("highway miles per gallon") + ggtitle("Histogram of highway miles per gallon")
+ggplot(mpg, aes(x=hwy)) + geom_histogram(fill="blue") + 
+  xlab("highway miles per gallon") + 
+  ggtitle("Histogram of highway miles per gallon")
 ```
 \
 _As we can see, The data is not evenly distributed. Most data between 16-20 hwy & 21-29 hwy. The biggest count is nearly 26 hwy and the least count is nearly 41._
@@ -95,7 +102,10 @@ _As we can see, The data is not evenly distributed. Most data between 16-20 hwy 
 # Exercise 2:
 Create a scatterplot. Put hwy on the x-axis and cty on the y-axis. Describe what you notice. Is there a relationship between hwy and cty? What does this mean?
 ```{r}
-ggplot(mpg, aes(x=hwy, y=cty)) + geom_point() + xlab("Highway miles per gallon") + ylab("City miles per gallon") +ggtitle("Scatterplot of highway miles per gallon regrading city miles per gallon")
+ggplot(mpg, aes(x=hwy, y=cty)) + geom_point() + 
+  xlab("Highway miles per gallon") + 
+  ylab("City miles per gallon") +
+  ggtitle("Scatterplot of highway miles per gallon regrading city miles per gallon")
 ```
 \
 _From the plot, we can notice that the hwy has a positive correlation to the cty which imply a car has higher highway miles per gallon also has a high city miles per gallon._
@@ -104,7 +114,9 @@ _From the plot, we can notice that the hwy has a positive correlation to the cty
 Make a bar plot of manufacturer. Flip it so that the manufacturers are on the y-axis. Order the bars by height. Which manufacturer produced the most cars? Which produced the least?
 ```{r}
 # original plot 
-ggplot(mpg, aes(x= manufacturer)) + geom_bar(stat = "count", fill="blue") + ggtitle("Bar plot of manufacturer")
+ggplot(mpg, aes(x= manufacturer)) + 
+  geom_bar(stat = "count", fill="blue") + 
+  ggtitle("Bar plot of manufacturer")
 ```
 ```{r}
 # Filp and order plot
@@ -121,7 +133,10 @@ _As we can see, the dodge produced the most cars and lincoin produced the least 
 Make a box plot of hwy, grouped by cyl. Do you see a pattern? If so, what?
 
 ```{r}
-ggplot(mpg, aes( x=hwy, y=factor(cyl))) + geom_boxplot(fill="green") + xlab("Highway miles per gallon") + ylab("Number of cylinders") +ggtitle("Boxplot of highway miles per gallon regrading Number of cylinders")
+ggplot(mpg, aes( x=hwy, y=factor(cyl))) + 
+  geom_boxplot(fill="green") + xlab("Highway miles per gallon") + 
+  ylab("Number of cylinders") +
+  ggtitle("Boxplot of highway miles per gallon regrading Number of cylinders")
 ```
 \
 _From the plot we can general say the Highway miles per gallon has a negative correlation to the number of cylinders which imply a car has less number of cylinders will have a high highway miles per gallon._
