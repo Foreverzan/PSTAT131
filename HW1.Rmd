@@ -124,7 +124,9 @@ mpg %>%
 	group_by(manufacturer) %>% 
 	summarise(count = n()) %>% 
 	ggplot(aes(y = reorder(manufacturer,(count)), x = count)) + 
-		geom_bar(stat = 'identity',fill="blue" ) + xlab("weight") +ylab("manufacturer") + ggtitle("Bar plot of manufacturer (order)")
+		geom_bar(stat = 'identity',fill="blue" )+
+    xlab("weight")+ylab("manufacturer") + 
+    ggtitle("Bar plot of manufacturer (order)")
 ```
 \
 _As we can see, the dodge produced the most cars and lincoin produced the least cars._
