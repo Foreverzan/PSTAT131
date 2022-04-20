@@ -91,13 +91,8 @@ _The distribution of the outcome is uneven distribute and the number of no survi
 Using the **training** data set, create a correlation matrix of all continuous variables. Create a visualization of the matrix, and describe any patterns you see. Are any predictors correlated with each other? Which ones, and in which direction?
 ```{r}
 cor_titanic_train <- titanic_train %>%
-  select(-passenger_id, -name, -cabin, -ticket) %>%
-  mutate(sex = fct_recode(sex,"0" = "male","1" = "female")) %>%
-  mutate(embarked = fct_recode(embarked,"1" = "C","2" = "Q","3"="S"))  %>%
-  mutate(sex = as.integer(sex),
-         pclass = as.integer(pclass),
-         survived = as.integer(survived),
-         embarked = as.integer(embarked)) %>%
+  select( -sex,-passenger_id, -name, -cabin, -ticket,-embarked,-survived) %>%
+  mutate(pclass = as.integer(pclass)) %>%
   correlate(use = "pairwise.complete.obs", method = "pearson") 
 rplot(cor_titanic_train)
 ```
