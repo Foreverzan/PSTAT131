@@ -1,0 +1,7 @@
+
+ Name / Data Type  / Description
+-----------------------------
+'Time'/ continuous / Number of seconds elapsed between this transaction and the first transaction in the dataset.
+'V1~V28'/ continuous / May be result of a PCA Dimensionality reduction to protect user identities and sensitive features(v1-v28)
+'Amount'/ continuous / Transaction Amount
+'Class'/ nominal / The response variable and it takes value 1 in case of fraud and 0 otherwise.
