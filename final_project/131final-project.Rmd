@@ -1,0 +1,534 @@
+---
+title: "Credit Card Fraud Machine Learning Analysis"
+author: "Yongheng Zan"
+output:
+  html_document:
+    toc: yes
+    code_folding: hide
+    toc_depth: 2
+    toc_float: yes
+    number_sections: no
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+```
+
+# Part 1: Introduction
+
+```{r, eval=TRUE}
+knitr::include_graphics("creditcard.png")
+```
+
+Credit card fraud is an inclusive term for fraud committed using a payment card, such as a credit card or debit card. The purpose may be to obtain goods or services or to make payment to another account, which is controlled by a criminal([https://en.wikipedia.org/wiki/Credit_card_fraud#Artificial_and_Computational_intelligence[8]](https://en.wikipedia.org/wiki/Credit_card_fraud#Artificial_and_Computational_intelligence%5B8%5D){.uri}). More important, as a victim, my cards have been used many times by frauds. So I'm going to construct a machine learning model to detect fraud. I will use Logistic Regression, Decision tree, Bagging, RandomForest, and Boosted tree to achieve this project.
+
+## What is Credit Card Fraud?
+
+Credit card fraud is a form of identity theft that involves an unauthorized taking of another's credit card information for the purpose of charging purchases to the account or removing funds from it.
+
+For detailed introduction, please watch this short video:
+
+```{r video, message = FALSE}
+library(vembedr)
+embed_youtube("c-DxF1XVATw")
+```
+
+## An overview of dataset
+
+The dataset contains transactions made by credit cards in September 2013 by European cardholders. This dataset presents transactions that occurred in two days, where we have 492 frauds out of 284,807 transactions. (<https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>)
+
+## Loading Data and Packages
+
+**Loading Data**
+
+```{r loading, class.source = 'fold-show'}
+# read in the data
+raw_data <- read.csv("creditcard.csv")
+head(raw_data)
+```
+
+**Check the dimension**
+
+```{r dimension, class.source = 'fold-show'}
+dimension <- dim(raw_data)
+dimension
+```
+
+This dataset includes 31 columns and 284807 observations. There are 1 response variable and 30 predictor variables. And 30 of them are numeric and 1 of them is binary. Feature 'Class' is the response variable and it takes value 1 in case of fraud and 0 otherwise. Detail see codebook.
+
+**Loading Packages**
+
+```{r loading packages, warning=FALSE, include=FALSE}
+library(tidymodels)
+library(tidyverse)
+library(ISLR) # For the Smarket data set
+library(ISLR2) # For the Bikeshare data set
+library(discrim)
+library(poissonreg)
+library(corrr)
+library(klaR) # for naive bayes
+library(forcats)
+library(corrplot)
+library(pROC)
+library(recipes)
+library(rsample)
+library(parsnip)
+library(workflows)
+library(janitor)
+library(glmnet)
+library(rpart.plot)
+library(vip)
+library(janitor)
+library(randomForest)
+library(xgboost)
+tidymodels_prefer()
+```
+
+# Part 2: Data Cleaning
+
+**Clean name**
+
+```{r column name,class.source = 'fold-show'}
+ccard_data <- raw_data %>% 
+  clean_names()
+```
+
+\
+**Convert class to factor**
+
+```{r, class.source = 'fold-show'}
+ccard_data <- ccard_data %>%
+  mutate(class = factor(class, levels = c("1", "0"))) %>%
+  select(-time,)
+
+```
+
+\
+**Check missing value**
+
+```{r missing value, class.source = 'fold-show'}
+sum(is.na(ccard_data))
+```
+
+\
+**Summary data**
+
+```{r, class.source = 'fold-show'}
+summary(ccard_data$amount)
+```
+
+```{r, class.source = 'fold-show'}
+# check variance again
+var(ccard_data$amount)
+```
+
+**Scale the amount**\
+As we can see, the amount has huge variance so we are going to apply `scale()` function to remove extreme value that might interfere with the functioning of our model.
+
+```{r, class.source = 'fold-show'}
+ccard_data$amount <- scale(ccard_data$amount)
+head(ccard_data)
+```
+
+Since we have done the cleaning part, we can start exploring data now.
+
+# Part 3: Data Split
+
+The data was split in a 70% training, 30% testing split. And stratified sampling by *class*.
+
+```{r, class.source = 'fold-show'}
+set.seed(2022)
+ccard_split <- initial_split(ccard_data, prop = 0.70, strata = class)
+ccard_train <- training(ccard_split)
+ccard_test <- testing(ccard_split)
+
+# check dimension
+dim(ccard_train)
+dim(ccard_test)
+```
+
+The training data has 199364 observations and testing has 85443 observations.
+
+# Part 4: Exploratory Data Analysis
+
+## Bar Plot and Table
+
+```{r, class.source = 'fold-show'}
+table(ccard_train$class)
+```
+
+```{r}
+ccard_train %>% 
+  ggplot(aes(x = class,fill=class)) +
+  geom_bar() +
+  ggtitle("Count of fraud")
+```
+
+\
+From the table and plot, we can see that the number of card fraud is highly unbalanced.
+
+## Correlation matrix
+
+```{r, warning=FALSE}
+ccard_train %>% 
+  select(is.numeric) %>% 
+  cor(use = "complete.obs") %>% 
+  corrplot(method = "color",type = "full", addCoef.col = "black", order = "hclust", tl.cex = 0.45,number.cex = 0.35)
+```
+
+\
+\
+We observe that most of variables are not correlated since those were presented to a Principal Component Analysis (PCA) algorithm, so we do not know if the numbering of the variables reflects the importance of the Principal Components.
+
+# Part 5: Model fitting
+
+## Create Recipe
+
+```{r, class.source = 'fold-show'}
+ccard_recipe <- recipe(class ~ ., ccard_train) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_normalize(all_predictors())
+```
+
+## Model 1: Logistic Regression, LDA/QDA
+
+For this part, I'm going to use three different models to find the best one.
+
+### Logistic regression model for classification using the *glm* engine.
+
+```{r, class.source = 'fold-show'}
+log_reg <- logistic_reg() %>% 
+  set_engine("glm") %>% 
+  set_mode("classification")
+
+log_wkflow <- workflow() %>% 
+  add_model(log_reg) %>% 
+  add_recipe(ccard_recipe)
+
+log_fit <- fit(log_wkflow, ccard_train)
+```
+
+### Linear discriminant analysis model for classification using the *MASS* engine.
+
+```{r, class.source = 'fold-show'}
+lda_mod <- discrim_linear() %>% 
+  set_mode("classification") %>% 
+  set_engine("MASS")
+
+lda_wkflow <- workflow() %>% 
+  add_model(lda_mod) %>% 
+  add_recipe(ccard_recipe)
+
+lda_fit <- fit(lda_wkflow, ccard_train)
+
+```
+
+### Quadratic discriminant analysis model for classification using the *MASS* engine.
+
+```{r, class.source = 'fold-show'}
+qda_mod <- discrim_quad() %>% 
+  set_mode("classification") %>% 
+  set_engine("MASS")
+
+qda_wkflow <- workflow() %>% 
+  add_model(qda_mod) %>% 
+  add_recipe(ccard_recipe)
+
+qda_fit <- fit(qda_wkflow, ccard_train)
+```
+
+### Comparing three models
+
+```{r}
+log_acc <- predict(log_fit, new_data = ccard_train, type = "class") %>% 
+  bind_cols(ccard_train %>% select(class)) %>% 
+  accuracy(truth = class, estimate = .pred_class)
+
+lda_acc <- predict(lda_fit, new_data = ccard_train, type = "class") %>% 
+  bind_cols(ccard_train %>% select(class)) %>% 
+  accuracy(truth = class, estimate = .pred_class)
+
+qda_acc <- predict(qda_fit, new_data = ccard_train, type = "class") %>% 
+  bind_cols(ccard_train %>% select(class)) %>% 
+  accuracy(truth = class, estimate = .pred_class)
+
+results <- bind_rows(log_acc, lda_acc, qda_acc) %>% 
+  tibble() %>% mutate(model = c("Logistic", "LDA", "QDA")) %>% 
+  select(model, .estimate) %>% 
+  arrange(.estimate)
+
+results
+```
+
+Since the LDA model has the highest training accuracy with 0.9994031, so I'm going to apply LDA model to the testing data.
+
+### Fitting testing data
+
+```{r}
+lda_test <- fit(lda_wkflow, ccard_test)
+predict(lda_test, new_data = ccard_test, type = "class") %>% 
+  bind_cols(ccard_test %>% select(class)) %>% 
+  accuracy(truth = class, estimate = .pred_class)
+```
+
+We can see that the LDA model did a great job that has 0.9993563 accuracy.
+
+### Confusion matrix and ROC
+
+We also can check it by using visualization:
+
+#### Matrix
+
+```{r}
+augment(lda_test, new_data = ccard_test) %>%
+  conf_mat(truth = class, estimate = .pred_class) %>% 
+  autoplot(type = "heatmap")
+```
+
+\
+
+#### ROC
+
+```{r}
+augment(lda_test, new_data = ccard_test) %>%
+  roc_curve(class, .pred_1) %>%
+  autoplot()
+```
+
+```{r,class.source = 'fold-show'}
+# Calculate AUC
+augment(lda_test, new_data = ccard_test) %>%
+  roc_auc(class, .pred_1)
+```
+
+\
+The confusion matrix and ROC have a good performance which also verify our model's accuracy. We have successful predicted 100 of 134 observations from the matrix and the curve almost reach the left-top corner.
+
+## Model 2: Decision tree
+
+Then, I'm going to set up decision tree model. We begin at Folding the training data. Use k-fold cross-validation, with k=5.
+
+```{r, class.source = 'fold-show'}
+ccard_fold <- vfold_cv(ccard_train, v = 5, strata = class)
+```
+
+### Set up and `rpart.plot()`
+
+```{r, class.source = 'fold-show'}
+# set up model and workflow
+tree_spec <- decision_tree() %>%
+  set_engine("rpart")
+
+class_tree_spec <- tree_spec %>%
+  set_mode("classification")
+
+class_tree_fit <- class_tree_spec %>%
+  fit(class ~ ., data = ccard_train)
+
+class_tree_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot(roundint=FALSE)
+
+```
+
+\
+
+### Fit decision tree
+
+```{r}
+augment(class_tree_fit, new_data = ccard_test) %>%
+  accuracy(truth = class, estimate = .pred_class)
+```
+
+### Confusion matrix
+
+Let us take a look at the confusion matrix:
+
+```{r}
+augment(class_tree_fit, new_data = ccard_test) %>%
+  conf_mat(truth = class, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+```{r,class.source = 'fold-show'}
+# Calculate AUC
+augment(class_tree_fit, new_data = ccard_test) %>%
+  roc_auc(class, .pred_1)
+```
+
+\
+We can see decision tree have high accuracy with 0.9994499 and have successful predicted 108 of 134 observations from the matrix.
+
+## Model 3: Random forest
+
+Next, I'm going to set up a random forest model and workflow.\
+
+### Set up
+
+```{r, class.source = 'fold-show'}
+rf_spec <- rand_forest(mtry = tune(),trees = tune(), min_n = tune()) %>%
+  set_engine("randomForest", importance = TRUE) %>%
+  set_mode("classification")
+
+rf_wf <- workflow() %>%
+  add_model(rf_spec) %>% 
+  add_recipe(ccard_recipe)
+
+param_grid_rf <- grid_regular(mtry(range = c(1, 29)), # mtry should not be smaller than 1 or larger than 29, since we only have 29 predictors.
+                           trees(range = c(10, 100)), # Due to we have a huge dataset, I chose 100 trees as maximum
+                           min_n(range = c(1, 4)),
+                           levels = 2)
+```
+
+### Tune the model and print an `autoplot()` of the results.
+
+```{r}
+tune_res <- tune_grid(
+  rf_wf, 
+  resamples = ccard_fold, 
+  grid = param_grid_rf, 
+  metrics = metric_set(roc_auc)
+)
+# print result
+autoplot(tune_res)
+```
+
+```{r}
+arrange(collect_metrics(tune_res),desc(mean))
+```
+
+In general, The more trees we add the better performance we have.
+
+### Important plot
+
+Create a variable importance plot, using `vip()`, with the best-performing random forest model fit on the training set.
+
+```{r}
+best_complexity <- select_best(tune_res, metric = "roc_auc")
+ccard_final <- finalize_workflow(rf_wf, best_complexity)
+rf_fit <- fit(ccard_final,data = ccard_train)
+rf_fit %>%
+  extract_fit_engine() %>%
+  vip()
+```
+
+\
+We can see the variable v9 is the most important. However, all variables are play a important role in this model.\
+
+### Fit random forest model
+
+```{r}
+augment(rf_fit, new_data = ccard_test) %>%
+  accuracy(truth = class, estimate = .pred_class)
+```
+
+The Random forest model has 0.9993329 accuracy.
+
+### Heat map
+
+```{r}
+augment(rf_fit, new_data = ccard_test) %>%
+  conf_mat(truth = class, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+We can see desision tree have high accuracy with 0.9993329 and have successful predicted 90 of 134 observations from the matrix.
+
+### AUC
+
+```{r,class.source = 'fold-show'}
+# Calculate AUC
+augment(rf_fit, new_data = ccard_test) %>%
+  roc_auc(class, .pred_1)
+```
+
+## Model 4: Boost tree
+
+At last, I'm going to using boost tree model.
+
+### Set up
+
+```{r, class.source = 'fold-show'}
+boost_tree_spec <- boost_tree(trees = tune()) %>%
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+boost_tree_grid <- grid_regular(trees(c(10,200)),levels = 10)
+
+boost_tree_wf <- workflow() %>%
+  add_model(boost_tree_spec) %>%
+  add_recipe(ccard_recipe)
+
+boost_tune_res <- tune_grid(
+  boost_tree_wf, 
+  resamples = ccard_fold, 
+  grid = boost_tree_grid, 
+  metrics = metric_set(roc_auc),
+)
+ 
+autoplot(boost_tune_res)
+```
+
+\
+The roc_auc keep increasing and reach the peak around 0.98 with 31 tress.
+
+### Select best tree
+
+```{r, class.source = 'fold-show'}
+best_boost_tree <- select_best(boost_tune_res)
+boost_tree_final <- finalize_workflow(boost_tree_wf, best_boost_tree)
+boost_tree_final_fit <- fit(boost_tree_final, data = ccard_train)
+```
+
+### Fit tree
+
+```{r}
+augment(boost_tree_final_fit, new_data = ccard_test)%>%
+  accuracy(truth = class, estimate = .pred_class)
+```
+
+The best boost tree model achieve 0.9995553 accuracy!
+
+### Heat map
+
+```{r}
+augment(boost_tree_final_fit, new_data = ccard_test) %>%
+  conf_mat(truth = class, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+\
+We can see desision tree have high accuracy with 0.9995553 and have successful predicted 109 of 134 observations from the matrix.
+
+### ROC
+
+```{r}
+augment(boost_tree_final_fit, new_data = ccard_test)%>%
+  roc_curve(class, .pred_1) %>%
+  autoplot()
+```
+
+### AUC
+
+```{r,class.source = 'fold-show'}
+# Calculate AUC
+augment(boost_tree_final_fit, new_data = ccard_test) %>%
+  roc_auc(class, .pred_1)
+```
+
+# Part 6: Conclusion
+
+In this project we have tried to show mainly 4 type methods to dealing this unbalanced datasets. The performance display below:
+
+| Method/Model  | Accuracy  |   AUC     |
+|:--------------|-----------|----------:|
+| LDA           | 0.9993563 | 0.9828842 |
+| Decision tree | 0.9994499 | 0.9102373 |
+| Random Forest | 0.9993329 |  0.930354 |
+| Boosted tree  | 0.9995553 |  0.977474 |
+
+From the heat map, we can see the transaction we predicted dataset where the instances of fraudulent case is few compared to the instances of normal transactions. We have a better accuracy after using resample technology. The best score of 0.999553 was achieved using an Boost tree model though other models performed well too. It is likely that by further tuning the BOOST TREE model parameters we can achieve even better performance.
