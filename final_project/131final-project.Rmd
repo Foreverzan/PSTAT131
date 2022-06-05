@@ -24,7 +24,7 @@ library(knitr)
 knitr::include_graphics("creditcard.png")
 ```
 
-Credit card fraud is an inclusive term for fraud committed using a payment card, such as a credit card or debit card. The purpose may be to obtain goods or services or to make payment to another account, which is controlled by a criminal([https://en.wikipedia.org/wiki/Credit_card_fraud#Artificial_and_Computational_intelligence[8]](https://en.wikipedia.org/wiki/Credit_card_fraud#Artificial_and_Computational_intelligence%5B8%5D){.uri}). More important, as a victim, my cards have been used many times by frauds. So I'm going to construct a machine learning model to detect fraud. I will use Logistic Regression, Decision tree, Bagging, RandomForest, and Boosted tree to achieve this project.
+Credit card fraud is an inclusive term for fraud committed using a payment card, such as a credit card or debit card. The purpose may be to obtain goods or services or to make payment to another account, which is controlled by a criminal([https://en.wikipedia.org/wiki/Credit_card_fraud#Artificial_and_Computational_intelligence[8]](https://en.wikipedia.org/wiki/Credit_card_fraud#Artificial_and_Computational_intelligence%5B8%5D){.uri}). More important, as a victim, my cards have been used many times by frauds. So I'm going to construct a machine learning model to detect fraud. I will use Logistic Regression, Nearly Neighbors,Decision tree, Bagging, RandomForest, and Boosted tree to achieve this project.
 
 ## What is Credit Card Fraud?
 
@@ -85,6 +85,10 @@ library(vip)
 library(janitor)
 library(randomForest)
 library(xgboost)
+library(kknn)
+library(skimr)
+library(patchwork)
+library(janitor)
 tidymodels_prefer()
 ```
 
@@ -308,13 +312,80 @@ augment(lda_test, new_data = ccard_test) %>%
 \
 The confusion matrix and ROC have a good performance which also verify our model's accuracy. We have successful predicted 100 of 134 observations from the matrix and the curve almost reach the left-top corner.
 
-## Model 2: Decision tree
+## Model 2: Nearest Neighbors
 
-Then, I'm going to set up decision tree model. We begin at Folding the training data. Use k-fold cross-validation, with k=5.
+Then, we start using the Nearest Neighbor model. We begin at Folding the training data. Use k-fold cross-validation, with k=5.
 
 ```{r, class.source = 'fold-show'}
 ccard_fold <- vfold_cv(ccard_train, v = 5, strata = class)
 ```
+
+### Set up
+
+```{r, class.source = 'fold-show', warning=FALSE}
+knn_model <- nearest_neighbor(neighbors = tune(),
+            mode = "classification") %>% 
+            set_engine("kknn")
+
+knn_workflow <- workflow() %>% 
+  add_model(knn_model) %>% 
+  add_recipe(ccard_recipe)
+
+# set-up tuning grid 
+knn_params <- parameters(knn_model)
+
+# define grid
+knn_grid <- grid_regular(knn_params, levels = 2)
+```
+
+### Tune the model
+
+```{r, class.source = 'fold-show'}
+knn_tune <- knn_workflow %>% 
+  tune_grid(resamples = ccard_fold, 
+            grid = knn_grid)
+```
+
+```{r, class.source = 'fold-show'}
+arrange(collect_metrics(knn_tune),desc(mean))
+```
+
+### Fit the nearest model
+
+We using the best parameter to fit the model.
+
+```{r,class.source = 'fold-show'}
+best_complexity <- select_best(knn_tune, metric = "roc_auc")
+ccard_final <- finalize_workflow(knn_workflow, best_complexity)
+knn_fit <- fit(ccard_final,data = ccard_train)
+
+augment(knn_fit, new_data = ccard_test) %>%
+  accuracy(truth = class, estimate = .pred_class)
+```
+
+### Heat map
+
+We can use the heat map to clearly see the prediction.
+
+```{r}
+augment(knn_fit, new_data = ccard_test) %>%
+  conf_mat(truth = class, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+We can see the Nearest Neighbors have high accuracy with 0.9995084 and have successful predicted 106 of 134 observations from the matrix.
+
+### AUC
+
+```{r,class.source = 'fold-show'}
+# Calculate AUC
+augment(knn_fit, new_data = ccard_test) %>%
+  roc_auc(class, .pred_1)
+```
+
+## Model 3: Decision tree
+
+Then, I'm going to set up decision tree model. 
 
 ### Set up and `rpart.plot()`
 
@@ -363,7 +434,7 @@ augment(class_tree_fit, new_data = ccard_test) %>%
 \
 We can see decision tree have high accuracy with 0.9994499 and have successful predicted 108 of 134 observations from the matrix.
 
-## Model 3: Random forest
+## Model 4: Random forest
 
 Next, I'm going to set up a random forest model and workflow.\
 
@@ -446,7 +517,7 @@ augment(rf_fit, new_data = ccard_test) %>%
   roc_auc(class, .pred_1)
 ```
 
-## Model 4: Boost tree
+## Model 5: Boost tree
 
 At last, I'm going to using boost tree model.
 
@@ -527,6 +598,7 @@ In this project we have tried to show mainly 4 type methods to dealing this unba
 | Method/Model  | Accuracy  |   AUC     |
 |:--------------|-----------|----------:|
 | LDA           | 0.9993563 | 0.9828842 |
+| K Nearest neighbor| 0.9995084 | 0.9212963 |
 | Decision tree | 0.9994499 | 0.9102373 |
 | Random Forest | 0.9993329 |  0.930354 |
 | Boosted tree  | 0.9995553 |  0.977474 |
